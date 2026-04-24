@@ -1,0 +1,82 @@
+/**
+ * SISTEM PERLINDUNGAN GRUP CANGGIH (ANTI-KUDETA & AI SCANNER)
+ * Fitur: Anti-Demote, Anti-Kick, Whitelist Admin, & Auto-Punish
+ */
+
+// --- KONFIGURASI ---
+const OWNER_ID = "628xxx@s.whatsapp.net"; // Ganti dengan ID Anda
+const GROUP_LINK = "https://chat.whatsapp.com/LInkGrupAnda";
+
+// Masukkan nomor admin yang ingin Anda beri perlindungan ekstra
+const ADMIN_TERLINDUNGI = [
+    "628123456789@s.whatsapp.net", 
+    "628987654321@s.whatsapp.net"
+];
+
+// Memori untuk memantau perilaku admin (Scanner)
+const monitorPerilaku = {};
+
+client.on('group-participants-update', async (update) => {
+    const { id, participants, action, author } = update;
+    const targetId = participants[0];
+
+    // Abaikan jika aksi dilakukan oleh Owner atau Bot sendiri
+    if (author === OWNER_ID || author === client.user.id) return;
+
+    // Inisialisasi data scanner untuk pelaku
+    if (!monitorPerilaku[author]) {
+        monitorPerilaku[author] = { tingkatBahaya: 0 };
+    }
+
+    // --- 1. LOGIKA PERLINDUNGAN ADMIN (ANTI-DEMOTE) ---
+    if (action === 'demote') {
+        const isTargetProtected = ADMIN_TERLINDUNGI.includes(targetId);
+
+        if (isTargetProtected) {
+            console.log(`🛡️ Upaya kudeta terdeteksi pada Admin Terlindungi!`);
+            
+            // Kembalikan jabatan korban
+            await client.groupParticipantsUpdate(id, [targetId], "promote");
+            
+            // Hukum pelaku (turunkan jabatannya)
+            await client.groupParticipantsUpdate(id, [author], "demote");
+
+            await client.sendMessage(id, { 
+                text: `🛡️ *SYSTEM PROTECT*\n\nUpaya @${author.split('@')[0]} menurunkan Admin Utama digagalkan. Jabatan pelaku telah dicabut!` 
+            });
+            return;
+        }
+    }
+
+    // --- 2. LOGIKA SCANNER USER JAHAT (MASS-ACTION) ---
+    if (action === 'remove' || action === 'demote') {
+        monitorPerilaku[author].tingkatBahaya++;
+
+        // Jika melakukan aksi jahat lebih dari 2 kali (Mass-action)
+        if (monitorPerilaku[author].tingkatBahaya >= 2) {
+            console.log(`🚨 USER JAHAT/PENYUSUP TERDETEKSI: ${author}`);
+
+            // Kick pelaku dari grup
+            await client.groupParticipantsUpdate(id, [author], "remove");
+
+            // Jika dia mengeluarkan member, kirimkan link kembali ke member tersebut
+            if (action === 'remove') {
+                await client.sendMessage(targetId, { 
+                    text: `Anda dikeluarkan oleh penyusup. Silakan gabung kembali: ${GROUP_LINK}` 
+                });
+            }
+
+            await client.sendMessage(id, { 
+                text: `🛡️ *SECURITY ALERT*\n\nUser @${author.split('@')[0]} terdeteksi sebagai PENYUSUP karena melakukan pembersihan grup. User telah di-ban otomatis!` 
+            });
+
+            // Reset skor bahaya
+            monitorPerilaku[author].tingkatBahaya = 0;
+        } else {
+            // Peringatan pertama
+            await client.sendMessage(id, { 
+                text: `⚠️ @${author.split('@')[0]}, tindakan Anda sedang dipantau oleh sistem keamanan.` 
+            });
+        }
+    }
+});
